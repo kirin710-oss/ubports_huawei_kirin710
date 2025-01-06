@@ -28,9 +28,9 @@ jobs:
         sudo chmod 755 /usr/bin/mkbootimg
         wget https://github.com/Halium/initramfs-tools-halium/releases/download/dynparts/initrd.img-touch-arm64 -O ./initramfs.cpio.gz
         ./build.sh
-        ./build/prepare-fake-ota.sh out/device_kirin710.tar.xz ota
-        ./build/system-image-from-ota.sh ota/ubuntu_command out
-        tar -czf out/rootfs.tar.gz out/rootfs.img
+        #./build/prepare-fake-ota.sh out/device_kirin710.tar.xz ota
+        #./build/system-image-from-ota.sh ota/ubuntu_command out
+        #tar -czf out/rootfs.tar.gz out/rootfs.img
         echo "NOW=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
       shell: bash
     - uses: softprops/action-gh-release@v1
@@ -38,7 +38,6 @@ jobs:
         files: |
           out/device_kirin710.tar.xz
           out/boot.img
-          out/rootfs.tar.gz
         name: Kirin710-${{ github.run_id }}
         tag_name: ${{ github.run_id }}
       env:
