@@ -10,9 +10,16 @@
 
 echo "mounting Huawei Parts"
 
-#mkdir /modem_log
-mount /dev/mmcblk0p61 /android/vendor -t erofs -o loop
-mount /dev/mmcblk0p68 /android/vendor/preavs -t erofs -o loop
+mount -t erofs -o ro,seclabel,relatime,user_xattr,acl,lz4asm /dev/mmcblk0p64 /odm
+mount -t erofs -o ro,seclabel,relatime,user_xattr,acl,lz4asm /dev/mmcblk0p61 /vendor
+mount -t erofs -o ro,seclabel,relatime,user_xattr,acl,lz4asm /dev/mmcblk0p68 /vendor/preavs
+mount -t ext4 -o rw,seclabel,nosuid,nodev,noatime,data=ordered /dev/mmcblk0p65 /cache
+mount -t ext4 -o ro,context=u:object_r:hisee_data_file:s0,relatime,data=ordered /dev/mmcblk0p32 /mnt/hisee_fs
+mount -t ext4 -o rw,context=u:object_r:modem_secure_file:s0,nosuid,nodev,noatime,noauto_da_alloc,data=ordered /dev/mmcblk0p7 /mnt/modem/modem_secure
+mount -t ext4 -o rw,context=u:object_r:modem_log_file:s0,nosuid,nodev,noatime,noauto_da_alloc,data=ordered /dev/mmcblk0p12 /modem_log
+mount -t ext4 -o ro,context=u:object_r:modem_fw_file:s0,relatime,data=ordered /dev/mmcblk0p50 /vendor/modem/modem_fw
+mount -t ext4 -o rw,context=u:object_r:modem_nv_file:s0,nosuid,nodev,noatime,noauto_da_alloc,data=ordered /dev/mmcblk0p15 /mnt/modem/mnvm2:0
+mount -t ext4 -o rw,context=u:object_r:splash2_data_file:s0,nosuid,nodev,noatime,data=ordered /dev/mmcblk0p22 /splash2
 
 log() {
     echo "$*" >&2
@@ -131,75 +138,75 @@ fi
 # - DTB
 
 # Deal with DTB first. Logic is pulled from Android's fs_mgr.
-#android_dt_dir=$(grep -E -o '(^| )androidboot\.android_dt_dir=[^ ]+' /proc/cmdline | cut -d "=" -f2)
-#if [ -z "$android_dt_dir" ]; then
-#    android_dt_dir="/proc/device-tree/firmware/android/"
-#fi
+android_dt_dir=$(grep -E -o '(^| )androidboot\.android_dt_dir=[^ ]+' /proc/cmdline | cut -d "=" -f2)
+if [ -z "$android_dt_dir" ]; then
+    android_dt_dir="/proc/device-tree/firmware/android/"
+fi
 
 # tr -d '\0' <${file} is used to silence "ignored null byte in input" warning from bash.
-#if [ "$(tr -d '\0' <${android_dt_dir}/compatible)" = "android,firmware" ] && \
-#        [ "$(tr -d '\0' <${android_dt_dir}/fstab/compatible)" = "android,fstab" ] && \
-#        [[ "$(tr -d '\0' <${android_dt_dir}/fstab/status)" =~ ^(|ok|okay)$ ]] \
-#; then
-#    log "Processing ${android_dt_dir}/fstab/"
+if [ "$(tr -d '\0' <${android_dt_dir}/compatible)" = "android,firmware" ] && \
+        [ "$(tr -d '\0' <${android_dt_dir}/fstab/compatible)" = "android,fstab" ] && \
+        [[ "$(tr -d '\0' <${android_dt_dir}/fstab/status)" =~ ^(|ok|okay)$ ]] \
+; then
+    log "Processing ${android_dt_dir}/fstab/"
 
- #   for entry in "${android_dt_dir}"/fstab/*; do
- #       [ -d "$entry" ] || continue
+    for entry in "${android_dt_dir}"/fstab/*; do
+        [ -d "$entry" ] || continue
 
-  #      [[ "$(tr -d '\0' <"${entry}/status")" =~ ^(|ok|okay)$ ]] || continue
+        [[ "$(tr -d '\0' <"${entry}/status")" =~ ^(|ok|okay)$ ]] || continue
 
-  #      dev=$(tr -d '\0' <"${entry}/dev")
-  #      mount_point=$(tr -d '\0' <"${entry}/mnt_point" || echo "/$(basename "$entry")" )
-  #      type=$(tr -d '\0' <"${entry}/type")
-  #      mnt_flags=$(tr -d '\0' <"${entry}/mnt_flags")
+        dev=$(tr -d '\0' <"${entry}/dev")
+        mount_point=$(tr -d '\0' <"${entry}/mnt_point" || echo "/$(basename "$entry")" )
+        type=$(tr -d '\0' <"${entry}/type")
+        mnt_flags=$(tr -d '\0' <"${entry}/mnt_flags")
 
-  #      process_single_fstab_entry "$dev" "$mount_point" "$type" "$mnt_flags"
-  #  done
-#fi
+        process_single_fstab_entry "$dev" "$mount_point" "$type" "$mnt_flags"
+    done
+fi
 
 # Now search for file fstab's. /run/first_stage_ramdisk is copied by halium-boot
 # if it detects such directory in the initrd, which indicates that vendor_boot
 # is available.
-#for file in \
-#    /android/fstab* \
-#    /run/first_stage_ramdisk/fstab* \
-#; do
-#    [ -e "$file" ] || continue
-#    log "Processing $file"
+for file in \
+    /android/fstab* \
+    /run/first_stage_ramdisk/fstab* \
+; do
+    [ -e "$file" ] || continue
+    log "Processing $file"
 
-#    while read -r line; do
- #       ret=0
+    while read -r line; do
+        ret=0
         # shellcheck disable=SC2086 # intend to split arguments.
- #       process_single_fstab_entry $line || ret=$?
- #       if [ $ret = 255 ]; then
- #           break
- #       fi
- #   done <"$file"
-#done
+        process_single_fstab_entry $line || ret=$?
+        if [ $ret = 255 ]; then
+            break
+        fi
+    done <"$file"
+done
 
 # If, by this point /android/vendor is not mounted, that means the early fstab
 # is in the first stage ramdisk which is replaced by us. Guess the /vendor
 # partition to grab a copy of fstab in it.
-#if [ -L /android/system/vendor ] && \
-#        ! mountpoint -q /android/vendor; then
-#    log "Guessing /android/vendor"
+if [ -L /android/system/vendor ] && \
+        ! mountpoint -q /android/vendor; then
+    log "Guessing /android/vendor"
 
-  #  for l in vendor VENDOR; do
-  #      vendor_part=$(find_partition_image $l)
-  #      if [ ! -e "$vendor_part" ]; then
-  #          vendor_part=$(find_partition_path $l)
-  #      fi
-  #      if [ -e "$vendor_part" ]; then break; fi
-   # done
+    for l in vendor VENDOR; do
+        vendor_part=$(find_partition_image $l)
+        if [ ! -e "$vendor_part" ]; then
+            vendor_part=$(find_partition_path $l)
+        fi
+        if [ -e "$vendor_part" ]; then break; fi
+    done
 
-  #  if [ -n "$vendor_part" ]; then
-  #      log "Guessed $vendor_part as /android/vendor"
-   #     mkdir -p /android/vendor
-   #     mount -o ro "$vendor_part" /android/vendor
-   # else
-    #    log "Hmm... can't guess a partition for /android/vendor."
-    #fi
-#fi
+    if [ -n "$vendor_part" ]; then
+        log "Guessed $vendor_part as /android/vendor"
+        mkdir -p /android/vendor
+        mount -o ro "$vendor_part" /android/vendor
+    else
+        log "Hmm... can't guess a partition for /android/vendor."
+    fi
+fi
 
 # Now we can process fstab in /vendor
 for file in \
